@@ -37,15 +37,18 @@
  */
 package org.jooq.mcve.test;
 
-import static org.jooq.mcve.Tables.TEST;
+import static org.jooq.mcve.Tables.APPROVALS;
+import static org.jooq.mcve.Tables.ORDER_LINES;
+import static org.jooq.mcve.Tables.REVIEWERS;
 import static org.junit.Assert.assertEquals;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
 
 import org.jooq.DSLContext;
+import org.jooq.Record2;
+import org.jooq.Result;
 import org.jooq.impl.DSL;
-import org.jooq.mcve.tables.records.TestRecord;
 
 import org.junit.After;
 import org.junit.Before;
@@ -58,7 +61,7 @@ public class MCVETest {
 
     @Before
     public void setup() throws Exception {
-        connection = DriverManager.getConnection("jdbc:h2:~/mcve", "sa", "");
+        connection = DriverManager.getConnection("jdbc:postgresql:mcve", "sa", "");
         ctx = DSL.using(connection);
     }
 
@@ -71,14 +74,20 @@ public class MCVETest {
 
     @Test
     public void mcveTest() {
-        TestRecord result =
-        ctx.insertInto(TEST)
-           .columns(TEST.VALUE)
-           .values(42)
-           .returning(TEST.ID)
-           .fetchOne();
 
-        result.refresh();
-        assertEquals(42, (int) result.getValue());
+        Result<Record2<Integer, Integer>> result = ctx.select(ORDER_LINES.ID, REVIEWERS.ID)
+                .from(ORDER_LINES)
+                .join(REVIEWERS)
+                .on(REVIEWERS.DEPARTMENT_NAME.eq(ORDER_LINES.orders().DEPARTMENT_NAME))
+                .where(
+                        DSL.notExists(
+                                DSL.selectOne()
+                                        .from(APPROVALS)
+                                        .where(APPROVALS.ORDER_LINE_ID.eq(ORDER_LINES.ID), APPROVALS.REVIEWER_ID.eq(REVIEWERS.ID))
+                        )
+                )
+                .fetch();
+
+        assertEquals(Integer.valueOf(1), result.getValue(0, ORDER_LINES.ID));
     }
 }
